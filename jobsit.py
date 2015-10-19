@@ -63,7 +63,7 @@ for timestamp in timestamps:
             print ' Task ' + shortname + ' is complete. Clearing.'
             shutil.rmtree(taskdir)
 
-        elif res['status'] == 'KILLED':
+        elif res['status'] == 'KILLED' or res['status'] == 'KILLFAILED':
             print ' Task ' + shortname + ' is killed. Clearing.'
             shutil.rmtree(taskdir)
 

@@ -8,8 +8,8 @@ from localdb import dbcursor
 ### Analyze the ntuples and find tagged events             ###
 ##############################################################
 
-def eos(cmd, path):
-    proc = subprocess.Popen(['eos', cmd, path], stdout = subprocess.PIPE, stderr = subprocess.PIPE)
+def eos(cmd, *args):
+    proc = subprocess.Popen(['eos', cmd] + list(args), stdout = subprocess.PIPE, stderr = subprocess.PIPE)
     out, err = proc.communicate()
     if err.strip():
         print err.strip()
@@ -71,3 +71,6 @@ for pd in eosPaths.keys():
                 query += ' AND (%s)' % (' OR '.join(['(run = %d AND lumi = %d)' % row for row in lumis]))
 
             dbcursor.execute(query)
+
+            os.remove('/tmp/' + fileName)
+            eos('rm', eosPath)

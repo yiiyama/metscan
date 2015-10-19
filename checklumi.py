@@ -44,11 +44,9 @@ for reco in config.reconstructions:
 
         datasetid = knownPDs[pd]
 
-        dbcursor.execute('SELECT `run`, `lumi` FROM `scanstatus` WHERE `recoid` = %s AND `datasetid` = %s', (recoid, datasetid))
-        processedLumis = [(run, lumi) for run, lumi in dbcursor]
+        infile = open('/tmp/lumis.list', 'w')
 
         # find new lumisections and inject to DB
-        nInject = 0
         for row in dasQuery('run, lumi dataset=/' + pd + '/' + recoVersion + '/RECO'):
             # example output
             # [{u'das_id': [u'562374bae13918e2ff9dcb8b'], u'run': [{u'run_number': 256584}], u'lumi': [{u'number': [[3, 5], [7, 18], [20, 22]]}], u'cache_id': [u'562374bfe13918e2ff9dcb92'], u'das': {u'primary_key': u'run.run_number', u'record': 1, u'condition_keys': [u'dataset.name'], u'ts': 1445164352.67815, u'system': [u'dbs3'], u'instance': u'prod/global', u'api': [u'run_lumi4dataset'], u'expire': 1445164472, u'services': [{u'dbs3': [u'dbs3']}]}, u'qhash': u'213d57e7df3cc986dec2a81820c33679', u'_id': u'56237540e13918e4b9ffe1fc'}, {u'das_id': [u'562374bae13918e2ff9dcb8b'], u'qhash': u'213d57e7df3cc986dec2a81820c33679', u'lumi': [{u'number': [[1, 1], [3, 15], [17, 26], [28, 33], [35, 36], [38, 43], [45, 52], [55, 176], [178, 207]]}], u'cache_id': [u'562374bfe13918e2ff9dcb93'], u'das': {u'primary_key': u'run.run_number', u'record': 1, u'condition_keys': [u'dataset.name'], u'ts': 1445164352.67815, u'system': [u'dbs3'], u'instance': u'prod/global', u'api': [u'run_lumi4dataset'], u'expire': 1445164472, u'services': [{u'dbs3': [u'dbs3']}]}, u'run': [{u'run_number': 256587}], u'_id': u'56237540e13918e4b9ffe1fb'}]
@@ -57,10 +55,9 @@ for reco in config.reconstructions:
             lumiranges = row['lumi'][0]['number']
             for first, last in lumiranges:
                 for lumi in range(first, last + 1):
-                    if (run, lumi) in processedLumis:
-                        continue
+                    infile.write('%d,%d,%d,%d\n' % (recoid, datasetid, run, lumi))
 
-                    dbcursor.execute('INSERT INTO `scanstatus` (recoid, datasetid, run, lumi, status) VALUES (%s, %s, %s, %s, \'new\')', (recoid, datasetid, run, lumi))
-                    nInject += 1
+        dbcursor.execute('LOAD DATA LOCAL INFILE \'/tmp/lumis.list\' INTO TABLE `scanstatus` FIELDS TERMINATED BY \',\' LINES TERMINATED BY \'\\n\'')
+        infile.close()
 
-        print ' Injected', nInject, 'lumis for dataset', pd + '/' + recoVersion
+        print ' Injected', dbcursor.rowcount, 'lumis for dataset', pd + '/' + recoVersion

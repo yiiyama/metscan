@@ -1,7 +1,7 @@
 dbuser = 'cmsmet'
 dbpass = 'FindBSM'
 dbhost = '127.0.0.1'
-dbname = 'metscan'
+dbname = 'metscandevel'
 
 installdir = '/local/metscan'
 

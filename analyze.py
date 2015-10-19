@@ -50,7 +50,7 @@ for timestamp in timestamps:
             for jobTimestamp in jobTimestamps:
                 jobBlocks = eos('ls', config.eosdir + '/' + timestamp + '/' + pd + '/' + crabRecoVersion + '/' + jobTimestamp)
                 for jobBlock in jobBlocks:
-                    files = eos('ls', config.eosdir + '/' + timestamp + '/' + pd + '/' + crabRecoVersion + '/' + jobTimestamp + '/' + jobBlock)
+                    files = [f for f in eos('ls', config.eosdir + '/' + timestamp + '/' + pd + '/' + crabRecoVersion + '/' + jobTimestamp + '/' + jobBlock) if f.endswith('.root')]
                     xrdPaths[pd][reco] += map(lambda n: xrdhead + config.eosdir + '/' + timestamp + '/' + pd + '/' + crabRecoVersion + '/' + jobTimestamp + '/' + jobBlock + '/' + n, files)
 
 
@@ -63,6 +63,8 @@ for pd in xrdPaths.keys():
         recoid = dbcursor.fetchall()[0][0]
         
         for xrdPath in paths:
+            print ' Analyzing', xrdPath
+
             source = ROOT.TFile.Open(xrdPath)
 
             run = array.array('I', [0])
@@ -103,8 +105,8 @@ for pd in xrdPaths.keys():
                 dbcursor.execute('INSERT INTO `eventdata` (`recoid`, `eventid`, `met`) VALUES (%s, %s, %s)', (recoid, eventid, pfMET[0]))
 
                 for iF, filt in enumerate(config.filters):
-                    if results[filt] == 0:
-                        dbcursor.execute('INSERT INTO `eventtags` (`recoid`, `eventid`, `filterid`)', (recoid, eventid, filterids[iF]))
+                    if results[filt][0] == 0:
+                        dbcursor.execute('INSERT INTO `eventtags` (`recoid`, `eventid`, `filterid`) VALUES (%s, %s, %s)', (recoid, eventid, filterids[iF]))
 
             lumis = []
             lumiTree = source.Get('ntuples/lumis')
@@ -119,13 +121,16 @@ for pd in xrdPaths.keys():
                     lumis.append((run[0], lumi[0]))
 
             for r, l in lumis:
+                print ' Setting recoid, datasetid, run, lumi =', (recoid, datasetid, r, l), ' to done..'
                 dbcursor.execute('UPDATE `scanstatus` SET `status` = \'done\' WHERE `recoid` = %s AND `datasetid` = %s AND `run` = %s AND `lumi` = %s', (recoid, datasetid, r, l))
 
+            print ' Done. Removing file.'
             eosPath = xrdPath.replace(xrdhead, '')
             eos('rm', eosPath)
             eosPath = os.path.dirname(eosPath)
             dircont = eos('ls', eosPath)
             while len(dircont) == 0:
+                print ' eos rmdir', eosPath
                 eos('rmdir', eosPath)
                 eosPath = os.path.dirname(eosPath)
                 if os.path.basename(eosPath) == 'metscan':

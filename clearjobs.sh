@@ -1,5 +1,21 @@
 #!/bin/bash
 
+KILL=false
+
+while [ $# -gt 0 ]
+do
+  case $1 in
+    -k)
+      KILL=true
+      shift
+      ;;
+    *)
+      echo "Unknown option $1"
+      exit 1
+      ;;
+  esac
+done
+
 source /cvmfs/cms.cern.ch/cmsset_default.sh
 source /cvmfs/cms.cern.ch/crab3/crab.sh
 
@@ -13,18 +29,23 @@ JOBDIR=/local/metscan/jobs
 for TIMESTAMP in $(ls $JOBDIR)
 do
   cd $JOBDIR/$TIMESTAMP
-  for CRABJOB in $(ls -d $JOBDIR/$TIMESTAMP/crab_*)
+  for CRABJOB in $(ls -d crab_*)
   do
-    STATUS=$(crab status -d $CRABJOB | awk '/^Jobs status/ {print $3}')
-    if [ "$STATUS" = "finished" ]
+    if $KILL
     then
-      echo "rm -rf $JOBDIR/$TIMESTAMP/$CRABJOB"
-      rm -rf $JOBDIR/$TIMESTAMP/$CRABJOB
+      crab kill -d $CRABJOB
+    else
+      STATUS=$(crab status -d $CRABJOB | awk '/^Jobs status/ {print $3}')
+      if [ "$STATUS" = "finished" ] || [ "$STATUS" = "failed" ]
+      then
+        echo "rm -rf $JOBDIR/$TIMESTAMP/$CRABJOB"
+        rm -rf $JOBDIR/$TIMESTAMP/$CRABJOB
+      fi
     fi
   done
-  if [ $(ls -d $JOBDIR/$TIMESTAMP/crab_* | wc -l) -eq 0 ]
+  if [ $(ls -d $JOBDIR/$TIMESTAMP/crab_* 2>/dev/null | wc -l) -eq 0 ]
   then
     cd $JOBDIR
-    rm $TIMESTAMP
+    rm -rf $TIMESTAMP
   fi
 done

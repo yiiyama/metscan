@@ -33,7 +33,8 @@ crabConfig = CRABClient.UserUtilities.config()
 crabConfig.General.workArea = config.installdir + '/jobs/' + timestamp
 crabConfig.JobType.pluginName = 'Analysis'
 crabConfig.Data.splitting = 'LumiBased'
-crabConfig.Data.unitsPerJob = 30
+crabConfig.Data.unitsPerJob = 200
+#crabConfig.Data.unitsPerJob = 20
 #crabConfig.Data.totalUnits = 1 # TESTING
 crabConfig.Data.outLFNDirBase = config.eosdir + '/' + timestamp
 crabConfig.Site.storageSite = 'T2_CH_CERN'
@@ -103,4 +104,3 @@ for reco in config.reconstructions:
 
         for run, lumi in lumis:
             dbcursor.execute('UPDATE `scanstatus` SET `status` = \'scanning\' WHERE `recoid` = %s AND `datasetid` = %s AND `run` = %s AND `lumi` = %s', (recoid, datasetid, run, lumi))
-

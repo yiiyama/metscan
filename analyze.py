@@ -1,15 +1,19 @@
-import sys
 import os
+import sys
 import subprocess
-import array
 import ROOT
+
+import config
+from localdb import dbcursor
+sys.path.append('/afs/cern.ch/cms/caf/python')
+import cmsIO
 
 ### STEP 3 ###################################################
 ### Analyze the ntuples and find tagged events             ###
 ##############################################################
 
-def eos(cmd, path):
-    proc = subprocess.Popen(['/afs/cern.ch/project/eos/installation/0.3.84-aquamarine/bin/eos.select', cmd, path], stdout = subprocess.PIPE, stderr = subprocess.PIPE)
+def eos(cmd, *args):
+    proc = subprocess.Popen(['eos', cmd] + list(args), stdout = subprocess.PIPE, stderr = subprocess.PIPE)
     out, err = proc.communicate()
     if err.strip():
         print err.strip()
@@ -21,224 +25,169 @@ def eos(cmd, path):
     return res
 
 
-# CMS default python configuration does not come with MySQL API..
-def querydb(query, form = ''):
-    proc = subprocess.Popen(['mysql', '-h', 'cms-metscan.cern.ch', '-u', 'cmsmet', '-pFindBSM', '-D', 'metscan', '-e', query.rstrip(';') + ';'], stdout = subprocess.PIPE, stderr = subprocess.PIPE)
+def download(eosPath):
+    global config
+
+    localPath = config.scratchdir + '/' + os.path.basename(eosPath)
+
+    source = cmsIO.cmsFile(eosPath, 'eos')
+    dest = cmsIO.cmsFile(localPath, 'eos')
+
+    command = cmsIO.getCommand(source.protocol, False)
+    command.append(source.pfn)
+    command.append(dest.pfn)
+    cmsIO.executeCommand(command)
+
+    return localPath
+
+
+def updateScanStatus(dumper, recoid, datasetid):
+    global dbcursor
+
+    print 'Updateing scan status.'
+
+    lumis = {}
+    for run in dumper.getAnalyzedRuns():
+        if run not in lumis:
+            lumis[run] = []
+
+        for lumi in dumper.getAnalyzedLumis(run):
+            lumis[run].append(lumi)
+
+    query = 'UPDATE `scanstatus` SET STATUS = \'done\' WHERE `recoid` = %d AND `datasetid` = %d AND (' % (recoid, datasetid)
+    runblocks = []
+    for run, ls in lumis.items():
+        block  = '(`run` = %d AND `lumi` IN (%s))' % (run, ','.join(map(str, ls)))
+        runblocks.append(block)
+
+    query += ' OR '.join(runblocks)
+    query += ')'
+
+    dbcursor.execute(query)
+
+    dumper.resetRuns()
+
+
+def updateEventTags(dumper):
+    dumper.closeTags()
+    loadFromFile('eventtags.txt', 'eventtags')
+    dumper.resetNTags()
+
+
+def updateEventData(dumper):
+    global config
+
+    dumper.closeData()
+    loadFromFile('eventdata.txt', 'eventdata')
+    loadFromFile('datasetrel.txt', 'datasetrel')
+    dumper.resetNData()
+
+
+def loadFromFile(fileName, tableName):
+    global config
+
+    query = 'LOAD DATA LOCAL INFILE \'' + config.scratchdir + '/' + fileName + '\' INTO TABLE `' + tableName + '` FIELDS TERMINATED BY \',\' LINES TERMINATED BY \'\\n\''
+    print query
+    proc = subprocess.Popen(['mysql', '-u', config.dbuser, '-p' + config.dbpass, '-D', config.dbname, '-e', query])
     out, err = proc.communicate()
 
-    if err.strip():
-        print err.strip()
-        return []
 
-    outlines = out.strip().split('\n')[1:]
-    result = []
-    for line in outlines:
-        words = line.strip().split()
-        if form:
-            iW = 0
-            for f in form:
-                if f == 'i':
-                    words[iW] = int(words[iW])
-                elif f == 'f':
-                    words[iW] = float(words[iW])
+ROOT.gROOT.LoadMacro(config.installdir + '/scripts/dumpASCII.cc+')
+dumper = ROOT.ASCIIDumper(config.scratchdir)
 
-                iW += 1
+dbcursor.execute('SELECT `filterid`, `name` from `filters`')
+for filterid, name in dbcursor:
+    dumper.addFilter(filterid, name)
 
-        result.append(tuple(words))
+eosPaths = {}
 
-    return result
+for timestamp in eos('ls', config.eosdir):
+    for pd in eos('ls', config.eosdir + '/' + timestamp):
+        eosPaths[pd] = {}
 
+        for crabRecoVersion in eos('ls', config.eosdir + '/' + timestamp + '/' + pd):
+            reco = crabRecoVersion.replace('crab_' + pd + '_', '')
+            reco = reco[:reco.rfind('-v')]
+            if reco not in eosPaths[pd]:
+                eosPaths[pd][reco] = []
+                
+            for jobTimestamp in eos('ls', config.eosdir + '/' + timestamp + '/' + pd + '/' + crabRecoVersion):
+                for jobBlock in eos('ls', config.eosdir + '/' + timestamp + '/' + pd + '/' + crabRecoVersion + '/' + jobTimestamp):
+                    files = eos('ls', config.eosdir + '/' + timestamp + '/' + pd + '/' + crabRecoVersion + '/' + jobTimestamp + '/' + jobBlock)
+                    eosPaths[pd][reco] += [config.eosdir + '/' + timestamp + '/' + pd + '/' + crabRecoVersion + '/' + jobTimestamp + '/' + jobBlock + '/' + f for f in files if f.endswith('.root')]
+#                    eosPaths[pd][reco] = eosPaths[pd][reco][0:10]
+#                    break
+#                break
+#            break
+#        break
+#    break
 
-# pass up to crab dir: /store/user/yiiyama/metscan/<timestamp>/<pd>/crab_<pd>_<reco>
-eosdir = sys.argv[1]
+for pd in eosPaths.keys():
+    dbcursor.execute('SELECT `datasetid` FROM `primarydatasets` WHERE `name` LIKE %s', (pd,))
+    datasetid = dbcursor.fetchall()[0][0]
 
-xrdhead = 'root://eoscms.cern.ch//eos/cms'
+    for reco, paths in eosPaths[pd].items():
+        dbcursor.execute('SELECT `recoid` FROM `reconstructions` WHERE `name` LIKE %s', (reco,))
+        recoid = dbcursor.fetchall()[0][0]
 
-xrdPaths = []
+        for eosPath in paths:
+            print 'Analyzing', eosPath
 
-crabRecoVersion = os.path.basename(eosdir)
-pd = os.path.basename(os.path.dirname(eosdir))
+            localPath = download(eosPath)
 
-reco = crabRecoVersion.replace('crab_' + pd + '_', '')
-reco = reco[:reco.rfind('-v')]
-    
-jobTimestamps = eos('ls', eosdir)
-for jobTimestamp in jobTimestamps:
-    jobBlocks = eos('ls', eosdir + '/' + jobTimestamp)
-    for jobBlock in jobBlocks:
-        xrdPaths += [xrdhead + eosdir + '/' + jobTimestamp + '/' + jobBlock + '/' + f for f in eos('ls', eosdir + '/' + jobTimestamp + '/' + jobBlock) if f.endswith('.root')]
+            status = dumper.dump(localPath, recoid, datasetid)
 
+            os.remove(localPath)
 
-datasetids = querydb('SELECT `datasetid` FROM `primarydatasets` WHERE `name` LIKE \'%s\'' % pd, 'i')
-datasetid = datasetids[0][0]
-
-recoids = querydb('SELECT `recoid` FROM `reconstructions` WHERE `name` LIKE \'%s\'' % reco, 'i')
-recoid = recoids[0][0]
-
-filters = querydb('SELECT `filterid`, `name` FROM `filters`', 'is')
-filterids = dict([(name, filterid) for filterid, name in filters])
-
-for xrdPath in xrdPaths:
-    print ' Analyzing', xrdPath
-
-    source = ROOT.TFile.Open(xrdPath)
-
-    runArr = array.array('I', [0])
-    lumiArr = array.array('I', [0])
-
-    tree = source.Get('ntuples/metfilters')
-
-    if tree.GetEntries() > 0:
-        eventArr = array.array('I', [0])
-        pfMETArr = array.array('f', [0.])
-        resultArrs = {}
-            
-        tree.SetBranchAddress('run', runArr)
-        tree.SetBranchAddress('lumi', lumiArr)
-        tree.SetBranchAddress('event', eventArr)
-        tree.SetBranchAddress('pfMET', pfMETArr)
-    
-        branches = tree.GetListOfBranches()
-        for branch in branches:
-            if not branch.GetName().startswith('filter_'):
+            if not status:
                 continue
-    
-            filt = branch.GetName().replace('filter_', '')
-            if filt not in filterids:
-                continue
-            
-            resultArrs[filt] = array.array('B', [0])
-            tree.SetBranchAddress(branch.GetName(), resultArrs[filt])
-    
-        runs = []
-    
-        iEntry = 0
-        while tree.GetEntry(iEntry) > 0:
-            iEntry += 1
-            if int(runArr[0]) not in runs:
-                runs.append(int(runArr[0]))
-    
-        print 'Runs in file:', runs
-    
-        query = 'SELECT `eventid`, `run`, `event` FROM `events`'
-        query += ' WHERE %s' % (' OR '.join(['`run` = %d' % r for r in runs]))
-        dbresult = querydb(query, 'iii')
-        eventids = dict([((r, e), eventid) for eventid, r, e in dbresult])
 
-        query = 'SELECT rel.`eventid` FROM `datasetrel` AS rel INNER JOIN `events` AS ev ON ev.`eventid` = rel.`eventid`'
-        query += ' WHERE rel.`datasetid` = %d' % datasetid
-        query += ' AND (%s)' % (' OR '.join(['ev.`run` = %d' % r for r in runs]))
-        dbresult = querydb(query, 'i')
-        connectedIds = [row[0] for row in dbresult]
-    
-        query = 'SELECT ed.`eventid` FROM `eventdata` AS ed INNER JOIN `events` AS ev ON ev.`eventid` = ed.`eventid`'
-        query += ' WHERE ed.`recoid` = %d' % recoid
-        query += ' AND (%s)' % (' OR '.join(['ev.`run` = %d' % r for r in runs]))
-        dbresult = querydb(query, 'i')
-        idsWithData = [row[0] for row in dbresult]
-    
-        # freeing memory
-        dbresult = []
+            if dumper.getNTags() > 1000000:
+                updateEventTags(dumper)
 
-        relBuffer = []
-        dataBuffer = []
-        tagBuffer = []
-    
-        iEntry = 0
-        while tree.GetEntry(iEntry) > 0:
-            iEntry += 1
+            if dumper.getNData() > 1000000:
+                updateEventData(dumper)
 
-            run = int(runArr[0])
-            lumi = int(lumiArr[0])
-            event = int(eventArr[0])
-            pfMET = float(pfMETArr[0])
-            results = dict([(filt, bool(r[0])) for filt, r in resultArrs.items()])
-    
-            if (run, event) not in eventids:
-                querydb('INSERT INTO `events` (`run`, `lumi`, `event`) VALUES (%d, %d, %d)' % (run, lumi, event))
-                lastins = querydb('SELECT LAST_INSERT_ID()', 'i')
-                eventid = lastins[0][0]
-                eventids[(run, event)] = eventid
-            else:
-                eventid = eventids[(run, event)]
-    
-            if eventid not in connectedIds:
-                relBuffer.append((eventid, datasetid))
-                connectedIds.append(eventid)
+            if dumper.getNLumis() > 1000:
+                updateScanStatus(dumper, recoid, datasetid)
 
-            if len(relBuffer) > 100:
-                # flush buffer
-                query = 'INSERT INTO `datasetrel` (`eventid`, `datasetid`) VALUES'
-                query += ' %s' % (', '.join(['(%d, %d)' % (e, d) for e, d in relBuffer]))
-                querydb(query)
-                relBuffer = []
-    
-            if eventid in idsWithData:
-                continue
-    
-            dataBuffer.append((eventid, pfMET))
-            idsWithData.append(eventid)
-    
-            if len(dataBuffer) > 100:
-                # flush buffer
-                query = 'INSERT INTO `eventdata` (`recoid`, `eventid`, `met`) VALUES'
-                query += ' %s' % (', '.join(['(%d, %d, %f)' % (recoid, e, m) for e, m in dataBuffer]))
-                querydb(query)
-                dataBuffer = []
-    
-            for filt, res in results.items():
-                if not res:
-                    tagBuffer.append((eventid, filterids[filt]))
-    
-            if len(tagBuffer) > 100:
-                # flush buffer
-                query = 'INSERT INTO `eventtags` (`recoid`, `eventid`, `filterid`) VALUES'
-                query += ' %s' % (', '.join(['(%d, %d, %d)' % (recoid, e, f) for e, f in tagBuffer]))
-                querydb(query)
-                tagBuffer = []
+            eos('rm', eosPath)
+        
+        # update lumi table for each dataset - reco
+        if dumper.getNLumis() != 0:
+            updateScanStatus(dumper, recoid, datasetid)
 
-        if len(relBuffer) > 0:
-            query = 'INSERT INTO `datasetrel` (`eventid`, `datasetid`) VALUES'
-            query += ' %s' % (', '.join(['(%d, %d)' % (e, d) for e, d in relBuffer]))
-            querydb(query)
-    
-        if len(dataBuffer) > 0:
-            query = 'INSERT INTO `eventdata` (`recoid`, `eventid`, `met`) VALUES'
-            query += ' %s' % (', '.join(['(%d, %d, %f)' % (recoid, e, m) for e, m in dataBuffer]))
-            querydb(query)
-    
-        if len(tagBuffer) > 0:
-            query = 'INSERT INTO `eventtags` (`recoid`, `eventid`, `filterid`) VALUES'
-            query += ' %s' % (', '.join(['(%d, %d, %d)' % (recoid, e, f) for e, f in tagBuffer]))
-            querydb(query)
+    if dumper.getNData() != 0:
+        updateEventData(dumper)
 
-    lumis = []
-    lumiTree = source.Get('ntuples/lumis')
+if dumper.getNTags() != 0:
+    updateEventTags(dumper)
 
-    lumiTree.SetBranchAddress('run', runArr)
-    lumiTree.SetBranchAddress('lumi', lumiArr)
+for timestamp in eos('ls', config.eosdir):
+    pds = eos('ls', config.eosdir + '/' + timestamp)
+    for pd in list(pds):
+        crabRecoVersions = eos('ls', config.eosdir + '/' + timestamp + '/' + pd)
+        for crabRecoVersion in list(crabRecoVersions):
+            jobTimestamps = eos('ls', config.eosdir + '/' + timestamp + '/' + pd + '/' + crabRecoVersion)
+            for jobTimestamp in list(jobTimestamps):
+                jobBlocks = eos('ls', config.eosdir + '/' + timestamp + '/' + pd + '/' + crabRecoVersion + '/' + jobTimestamp)
+                for jobBlock in list(jobBlocks):
+                    files = eos('ls', config.eosdir + '/' + timestamp + '/' + pd + '/' + crabRecoVersion + '/' + jobTimestamp + '/' + jobBlock)
+                    if len(files) == 0:
+                        eos('rm', '-r', config.eosdir + '/' + timestamp + '/' + pd + '/' + crabRecoVersion + '/' + jobTimestamp + '/' + jobBlock)
+                        jobBlocks.remove(jobBlock)
 
-    iEntry = 0
-    while lumiTree.GetEntry(iEntry) > 0:
-        iEntry += 1
-        if (int(runArr[0]), int(lumiArr[0])) not in lumis:
-            lumis.append((int(runArr[0]), int(lumiArr[0])))
+                if len(jobBlocks) == 0:
+                    eos('rmdir', config.eosdir + '/' + timestamp + '/' + pd + '/' + crabRecoVersion + '/' + jobTimestamp)
+                    jobTimestamps.remove(jobTimestamp)
 
-    if len(lumis) > 0:
-        query = 'UPDATE `scanstatus` SET `status` = \'done\' WHERE'
-        query += ' `recoid` = %d AND `datasetid` = %d' % (recoid, datasetid)
-        query += ' AND (%s)' % (' OR '.join(['(`run` = %d AND `lumi` = %d)' % (r, l) for r, l in lumis]))
-        querydb(query)
+            if len(jobTimestamps) == 0:
+                eos('rmdir', config.eosdir + '/' + timestamp + '/' + pd + '/' + crabRecoVersion)
+                crabRecoVersions.remove(crabRecoVersion)
 
-    print ' Done. Removing file.'
-    eosPath = xrdPath.replace(xrdhead, '')
-    eos('rm', eosPath)
-    eosPath = os.path.dirname(eosPath)
-    dircont = eos('ls', eosPath)
-    while len(dircont) == 0:
-        print ' eos rmdir', eosPath
-        eos('rmdir', eosPath)
-        eosPath = os.path.dirname(eosPath)
-        if os.path.basename(eosPath) == 'metscan':
-            break
-        dircont = eos('ls', eosPath)
+        if len(crabRecoVersions) == 0:
+            eos('rmdir', config.eosdir + '/' + timestamp + '/' + pd)
+            pds.remove(pd)
+
+    if len(pds) == 0:
+        eos('rmdir', config.eosdir + '/' + timestamp)

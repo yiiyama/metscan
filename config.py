@@ -1,9 +1,10 @@
 dbuser = 'cmsmet'
 dbpass = 'FindBSM'
 dbhost = '127.0.0.1'
-dbname = 'metscandevel'
+dbname = 'metscan'
 
 installdir = '/local/metscan'
+scratchdir = '/data/scratch'
 
 reconstructions = ['Run2015D-PromptReco']
 
@@ -30,6 +31,12 @@ filters = [
     "ecaltp",
     "ecalbe",
     "ecalsc"
+]
+
+dcsJsons = [
+    '/afs/cern.ch/cms/CAF/CMSCOMM/COMM_DQM/certification/Collisions15/13TeV/DCSOnly/json_DCSONLY.txt',
+    '/afs/cern.ch/cms/CAF/CMSCOMM/COMM_DQM/certification/Collisions15/13TeV/DCSOnly/json_DCSONLY_0T.txt',
+    '/afs/cern.ch/cms/CAF/CMSCOMM/COMM_DQM/certification/Collisions15/13TeV/DCSOnly/json_DCSONLY_2.8T.txt'
 ]
 
 eosdir = '/store/user/yiiyama/metscan'

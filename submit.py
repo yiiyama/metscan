@@ -16,10 +16,6 @@ from localdb import dbcursor
 ### Submit ntuplizer jobs over all new lumisections        ###
 ##############################################################
 
-if not os.path.exists('/afs/cern.ch/user/' + os.environ['USER'][0] + '/' + os.environ['USER'] + '/x509up_u' + str(os.getuid())):
-    print 'X509 proxy does not exist. Not submitting ntuplizer jobs.'
-    sys.exit(1)
-
 # list of dataset full names (PD + reconstruction version)
 # There isn't really a need to query das every time. Providing a hard-coded dataset list is another option..
 datasets = datasetList()
@@ -32,9 +28,9 @@ timestamp = time.strftime('%y%m%d%H%M%S')
 crabConfig = CRABClient.UserUtilities.config()
 crabConfig.General.workArea = config.installdir + '/jobs/' + timestamp
 crabConfig.JobType.pluginName = 'Analysis'
+#crabConfig.JobType.outputFiles = ['tags.txt', 'eventdata.txt', 'lumis.txt']
 crabConfig.Data.splitting = 'LumiBased'
-crabConfig.Data.unitsPerJob = 200
-#crabConfig.Data.unitsPerJob = 20
+crabConfig.Data.unitsPerJob = 100
 #crabConfig.Data.totalUnits = 1 # TESTING
 crabConfig.Data.outLFNDirBase = config.eosdir + '/' + timestamp
 crabConfig.Site.storageSite = 'T2_CH_CERN'
@@ -55,6 +51,7 @@ for reco in config.reconstructions:
     for pd, datasetid in knownPDs.items():
         dbcursor.execute('SELECT `run`, `lumi` FROM `scanstatus` WHERE `recoid` = %s AND `datasetid` = %s AND (`status` LIKE \'new\' OR `status` LIKE \'failed\') ORDER BY `run`, `lumi`', (recoid, datasetid))
         if dbcursor.rowcount <= 0:
+            print ' No job to submit for', pd
             continue
 
         lumis = [(run, lumi) for run, lumi in dbcursor]

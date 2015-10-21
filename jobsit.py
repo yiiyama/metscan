@@ -8,6 +8,7 @@ import logging
 from CRABClient.Commands.status import status
 from CRABClient.Commands.resubmit import resubmit
 from CRABClient.Commands.kill import kill
+#from CRABAPI.RawCommand import crabCommand
 from CRABClient.ClientExceptions import ClientException
 import CRABClient.UserUtilities
 from httplib import HTTPException
@@ -19,10 +20,6 @@ from localdb import dbcursor
 ### STEP 2.5 ###################################################
 ### Manage CRAB jobs                                       #####
 ################################################################
-
-if not os.path.exists('/afs/cern.ch/user/' + os.environ['USER'][0] + '/' + os.environ['USER'] + '/x509up_u' + str(os.getuid())):
-    print 'X509 proxy does not exist. Not submitting ntuplizer jobs.'
-    sys.exit(1)
 
 KILL = ('-K' in sys.argv)
 
@@ -40,6 +37,7 @@ for timestamp in timestamps:
         try:
             statusobj = status(logger, ['--dir', taskdir])
             res = statusobj()
+#            res = crabCommand('status', dir = taskdir)
         except ClientException as cle:
             print ' CRAB directory ' + shortname + ' is corrupted. Deleting.'
             shutil.rmtree(taskdir)
@@ -52,10 +50,15 @@ for timestamp in timestamps:
                 try:
                     killobj = kill(logger, ['--dir', taskdir])
                     killobj()
+#                    crabCommand('kill', dir = taskdir)
                 except HTTPException as hte:
                     print ' Failed to kill ' + shortname
                 except ClientException as cle:
                     print ' Failed to kill ' + shortname
+
+            print ' Resubmitting potential failed jobs..'
+            resubmitobj = resubmit(logger, ['--dir', taskdir])
+            resubmitobj()
 
             continue
 
@@ -75,6 +78,7 @@ for timestamp in timestamps:
                 try:
                     resubmitobj = resubmit(logger, ['--dir', taskdir])
                     resubmitobj()
+#                    crabCommand('resubmit', dir = taskdir)
                 except HTTPException as hte:
                     print ' Resubmission of ' + shortname + ' failed. Deleting.'
                     clear = True

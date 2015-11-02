@@ -56,40 +56,63 @@ for reco in config.reconstructions:
 
         lumis = [(run, lumi) for run, lumi in dbcursor]
 
+        if len(lumis) == 0:
+            continue
+
         print ' ' + pd
 
-        # make json
-        lumiMaskName = crabConfig.General.workArea + '/lumiMask_' + pd + '_' + reco + '.json'
-        json = open(lumiMaskName, 'w')
-        json.write('{')
-        currentRun = 0
-        currentLumiRange = None
-        for run, lumi in lumis:
-            if run != currentRun:
-                if currentRun != 0:
-                    json.write('[%d, %d]' % currentLumiRange)
-                    json.write('], ')
-                json.write('"%d": [' % run)
-                currentRun = run
-                currentLumiRange = None
-
-            if not currentLumiRange:
-                currentLumiRange = (lumi, lumi)
-            elif lumi == currentLumiRange[1] + 1:
-                currentLumiRange = (currentLumiRange[0], lumi)
-            else:
-                json.write('[%d, %d], ' % currentLumiRange)
-                currentLumiRange = (lumi, lumi)
-
-        json.write('[%d, %d]' % currentLumiRange)
-        json.write(']}')
-        json.close()
-
-        crabConfig.Data.lumiMask = lumiMaskName
-
         for recoVersion in [ds[1] for ds in datasets if ds[0] == pd]:
+            runsInDS = []
+            for row in dasQuery('run dataset=/%s/%s/RECO' % (pd, recoVersion)):
+                # example output
+                # {u'das_id': [u'562e00e8e1391816fc88e7e3'], u'qhash': u'82989270bb85ec7e7d676d8f447a1381', u'cache_id': [u'562e00e8e1391816fc88e81b'], u'das': {u'primary_key': u'run.run_number', u'record': 1, u'condition_keys': [u'dataset.name'], u'ts': 1445855464.7480609, u'system': [u'dbs3'], u'instance': u'prod/global', u'api': [u'runs_via_dataset'], u'expire': 1445855764, u'services': [{u'dbs3': [u'dbs3']}]}, u'run': [{u'run_number': 256584}], u'_id': u'562e00e8e1391816fc88e890'}
+                runsInDS.append(row['run'][0]['run_number'])
+
+            # make json
+            jsonCont = []
+            currentLumiRange = None
+            for run, lumi in lumis:
+                if run < min(runsInDS) or run > max(runsInDS):
+                    continue
+
+                if len(jsonCont) == 0:
+                    jsonCont.append((run, []))
+
+                if run != jsonCont[-1][0]:
+                    jsonCont[-1][1].append(currentLumiRange)
+                    jsonCont.append((run, []))
+    
+                if not currentLumiRange:
+                    currentLumiRange = (lumi, lumi)
+                elif lumi == currentLumiRange[1] + 1:
+                    currentLumiRange = (currentLumiRange[0], lumi)
+                else:
+                    jsonCont[-1][1].append(currentLumiRange)
+                    currentLumiRange = (lumi, lumi)
+
+            if len(jsonCont) == 0:
+                continue
+
+            jsonCont[-1][1].append(currentLumiRange)
+
+            runBlocks = []
+            for run, ranges in jsonCont:
+                runBlock = '"%d": [' % run
+                runBlock += ', '.join(['[%d, %d]' % lr for lr in ranges])
+                runBlock += ']'
+                runBlocks.append(runBlock)
+
+            jsonText = '{' + ', '.join(runBlocks) + '}'
+
+            lumiMaskName = crabConfig.General.workArea + '/lumiMask_' + pd + '_' + recoVersion + '.json'
+            json = open(lumiMaskName, 'w')
+            json.write(jsonText)
+            json.close()
+
             crabConfig.General.requestName = pd + '_' + recoVersion
             crabConfig.Data.inputDataset = '/' + pd + '/' + recoVersion + '/RECO'
+            crabConfig.Data.lumiMask = lumiMaskName
+
             # Submit.
             try:
                 print '  Submitting..'

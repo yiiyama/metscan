@@ -7,6 +7,7 @@ import logging
 
 from CRABClient.Commands.status import status
 from CRABClient.Commands.resubmit import resubmit
+from CRABClient.Commands.report import report
 from CRABClient.Commands.kill import kill
 #from CRABAPI.RawCommand import crabCommand
 from CRABClient.ClientExceptions import ClientException
@@ -27,6 +28,29 @@ logger = logging.getLogger('CRAB3.all')
 logger.setLevel(logging.CRITICAL)
 logger.logfile = '/dev/null'
 
+def cleanup(timestamp, jobdir):
+    taskdir = config.installdir + '/jobs/' + timestamp + '/' + jobdir
+    if os.path.exists(taskdir + '/result/missingLumiSummary.json'):
+        with open(taskdir + '/result/missingLumiSummary.json') as json:
+            lumiLists = eval(json.read())
+    else:
+        jsonName = jobdir.replace('crab_', 'lumiMask_') + '.json'
+        with open(config.installdir + '/jobs/' + timestamp + '/' + jsonName) as json:
+            lumiLists = eval(json.read())
+
+   
+    allLumis = []
+    for srun, lumiRanges in lumiLists.items():
+        for start, end in lumiRanges:
+            allLumis += ['(%s, %d)' % (srun, l) for l in range(start, end + 1)]
+
+    query = 'UPDATE `scanstatus` SET `status` = \'failed\' WHERE `status` LIKE \'scanning\' AND (`run`, `lumi`) IN (%s)' % (', '.join(allLumis))
+    print query
+
+    dbcursor.execute(query)
+    shutil.rmtree(config.installdir + '/jobs/' + timestamp + '/' + jobdir)
+
+
 timestamps = os.listdir(config.installdir + '/jobs')
 for timestamp in timestamps:
     jobdirs = [d for d in os.listdir(config.installdir + '/jobs/' + timestamp) if d.startswith('crab_')]
@@ -40,7 +64,7 @@ for timestamp in timestamps:
 #            res = crabCommand('status', dir = taskdir)
         except ClientException as cle:
             print ' CRAB directory ' + shortname + ' is corrupted. Deleting.'
-            shutil.rmtree(taskdir)
+            cleanup(timestamp, jobdir)
             continue
 
         print ' Task ' + shortname + ' status is ' + res['status']
@@ -57,37 +81,29 @@ for timestamp in timestamps:
                     print ' Failed to kill ' + shortname
 
             print ' Resubmitting potential failed jobs..'
-            resubmitobj = resubmit(logger, ['--dir', taskdir])
-            resubmitobj()
+            try:
+                resubmitobj = resubmit(logger, ['--dir', taskdir])
+                resubmitobj()
+            except HTTPException as hte:
+                print ' Failed to resubmit ' + shortname
+            except ClientException as cle:
+                print ' Failed to resubmit ' + shortname
 
             continue
 
-        elif res['status'] == 'FINISHED':
-            print ' Task ' + shortname + ' is complete. Clearing.'
+        elif res['status'] == 'COMPLETED':
+            print ' Clearing.'
             shutil.rmtree(taskdir)
 
-        elif res['status'] == 'KILLED' or res['status'] == 'KILLFAILED':
-            print ' Task ' + shortname + ' is killed. Clearing.'
-            shutil.rmtree(taskdir)
+        elif res['status'] in ['KILLED', 'KILLFAILED', 'FAILED', 'SUBMITFAILED', 'RESUBMITFAILED']:
+            print ' Obtaining the list of lumis not analyzed.'
+            try:
+                reportobj = report(logger, ['--dir', taskdir])
+                reportobj()
+            except:
+                print ' Failed to fetch the lumi list.'
 
-        elif res['status'] == 'FAILED' or res['status'] == 'SUBMITFAILED':
-            if KILL:
-                clear = True
-            else:
-                clear = False
-                try:
-                    resubmitobj = resubmit(logger, ['--dir', taskdir])
-                    resubmitobj()
-#                    crabCommand('resubmit', dir = taskdir)
-                except HTTPException as hte:
-                    print ' Resubmission of ' + shortname + ' failed. Deleting.'
-                    clear = True
-                except ClientException as cle:
-                    print ' Resubmission of ' + shortname + ' failed. Deleting.'
-                    clear = True
-
-            if clear:
-                shutil.rmtree(taskdir)
+            cleanup(timestamp, jobdir)
 
     jobdirs = [d for d in os.listdir(config.installdir + '/jobs/' + timestamp) if d.startswith('crab_')]
     if len(jobdirs) == 0:

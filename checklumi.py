@@ -1,10 +1,7 @@
 import sys
+import os
 import re
 import subprocess
-
-# probably not safe..
-sys.path.append('/usr/lib/python2.6/site-packages')
-import mysql.connector as mysqlc
 
 import config
 from das import dasQuery, datasetList
@@ -35,7 +32,7 @@ datasets = datasetList()
 dcsMask = {}
 for fileName in config.dcsJsons:
     with open(fileName) as dcsJson:
-        maskJSON = eval(maskFile.read())
+        maskJSON = eval(dcsJson.read())
 
     for runStr, lumiRanges in maskJSON.items():
         run = int(runStr)
@@ -64,7 +61,10 @@ for reco in config.reconstructions:
         for row in dasQuery('run, lumi dataset=/' + pd + '/' + recoVersion + '/RECO'):
             # example output
             # [{u'das_id': [u'562374bae13918e2ff9dcb8b'], u'run': [{u'run_number': 256584}], u'lumi': [{u'number': [[3, 5], [7, 18], [20, 22]]}], u'cache_id': [u'562374bfe13918e2ff9dcb92'], u'das': {u'primary_key': u'run.run_number', u'record': 1, u'condition_keys': [u'dataset.name'], u'ts': 1445164352.67815, u'system': [u'dbs3'], u'instance': u'prod/global', u'api': [u'run_lumi4dataset'], u'expire': 1445164472, u'services': [{u'dbs3': [u'dbs3']}]}, u'qhash': u'213d57e7df3cc986dec2a81820c33679', u'_id': u'56237540e13918e4b9ffe1fc'}, {u'das_id': [u'562374bae13918e2ff9dcb8b'], u'qhash': u'213d57e7df3cc986dec2a81820c33679', u'lumi': [{u'number': [[1, 1], [3, 15], [17, 26], [28, 33], [35, 36], [38, 43], [45, 52], [55, 176], [178, 207]]}], u'cache_id': [u'562374bfe13918e2ff9dcb93'], u'das': {u'primary_key': u'run.run_number', u'record': 1, u'condition_keys': [u'dataset.name'], u'ts': 1445164352.67815, u'system': [u'dbs3'], u'instance': u'prod/global', u'api': [u'run_lumi4dataset'], u'expire': 1445164472, u'services': [{u'dbs3': [u'dbs3']}]}, u'run': [{u'run_number': 256587}], u'_id': u'56237540e13918e4b9ffe1fb'}]
-            
+
+            if len(row['run']) == 0:
+                continue
+
             run = row['run'][0]['run_number']
             if run not in dcsMask:
                 continue

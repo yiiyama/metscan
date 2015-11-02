@@ -13,8 +13,11 @@ import config
 
 def dasQuery(query, limit = 0):
     global das_client
-    result = das_client.get_data('https://cmsweb.cern.ch', query, 0, limit, False, 300, '', '')
-    return result['data']
+    try:
+        result = das_client.get_data('https://cmsweb.cern.ch', query, 0, limit, False, 300, '', '')
+        return result['data']
+    except:
+        return []
 
 def datasetList():
     datasets = []

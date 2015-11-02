@@ -8,30 +8,11 @@ scratchdir = '/data/scratch'
 
 reconstructions = ['Run2015D-PromptReco']
 
-datasetExcludePatterns = ['HLT.*', '.*_0T', 'Commissioning', 'Cosmics', 'TOTEM.*', 'ToTOTEM.*', 'L1MinimumBias.*']
+datasetExcludePatterns = ['HLT.*', '.*_0T', 'Commissioning', 'Cosmics', 'TOTEM.*', 'ToTOTEM.*', 'L1MinimumBias.*', 'EGMLowPU', 'EmptyBX', 'FSQJets.', 'FullTrack', 'HighMultiplicity', 'HIN.*', 'ZeroBias[5-8]']
 
 cmsswbases = {
     'Run2015D-PromptReco': ('CMSSW_7_4_12', 'CMSSW_7_4_12_scanningHalo')
 }
-
-filters = [
-    "tracking_letmc",
-    "tracking_letms",
-    "tracking_msc",
-    "tracking_tmsc",
-    "csc",
-    "csc2015",
-    "cscTMU",
-    "halo",
-    "hbher1",
-    "hbher1nozeros",
-    "hbher2l",
-    "hbher2t",
-    "hbheiso",
-    "ecaltp",
-    "ecalbe",
-    "ecalsc"
-]
 
 dcsJsons = [
     '/afs/cern.ch/cms/CAF/CMSCOMM/COMM_DQM/certification/Collisions15/13TeV/DCSOnly/json_DCSONLY.txt',
@@ -39,6 +20,7 @@ dcsJsons = [
     '/afs/cern.ch/cms/CAF/CMSCOMM/COMM_DQM/certification/Collisions15/13TeV/DCSOnly/json_DCSONLY_2.8T.txt'
 ]
 
-eosdir = '/store/user/yiiyama/metscan'
+goldenJson = '/afs/cern.ch/cms/CAF/CMSCOMM/COMM_DQM/certification/Collisions15/13TeV/Cert_246908-258750_13TeV_PromptReco_Collisions15_25ns_JSON.txt'
+silverJson = '/afs/cern.ch/cms/CAF/CMSCOMM/COMM_DQM/certification/Collisions15/13TeV/Cert_246908-258750_13TeV_PromptReco_Collisions15_25ns_JSON_Silver.txt'
 
-submitMax = 1000 # submissions per run
+eosdir = '/store/user/yiiyama/metscan'

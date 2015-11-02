@@ -35,9 +35,21 @@ then
   exit 0
 fi
 
+if $USECRAB
+then
+  if [ -e $WORKDIR/locks/crab.lock ]
+  then
+    echo "Lock for crab exists"
+    exit 0
+  else
+    touch $WORKDIR/locks/crab.lock
+  fi
+fi
+
 if [ -e $WORKDIR/locks/$SCRIPT.lock ]
 then
   echo "Lock for $SCRIPT exists"
+  $USECRAB && rm $WORKDIR/locks/crab.lock
   exit 0
 fi
 
@@ -76,3 +88,5 @@ else
 fi
 
 rm $WORKDIR/locks/$SCRIPT.lock
+
+$USECRAB && rm $WORKDIR/locks/crab.lock

@@ -38,7 +38,6 @@ def cleanup(timestamp, jobdir):
         with open(config.installdir + '/jobs/' + timestamp + '/' + jsonName) as json:
             lumiLists = eval(json.read())
 
-   
     allLumis = []
     for srun, lumiRanges in lumiLists.items():
         for start, end in lumiRanges:
@@ -51,7 +50,7 @@ def cleanup(timestamp, jobdir):
     shutil.rmtree(config.installdir + '/jobs/' + timestamp + '/' + jobdir)
 
 
-timestamps = os.listdir(config.installdir + '/jobs')
+timestamps = sorted(os.listdir(config.installdir + '/jobs'))
 for timestamp in timestamps:
     jobdirs = [d for d in os.listdir(config.installdir + '/jobs/' + timestamp) if d.startswith('crab_')]
     for jobdir in jobdirs:
@@ -61,8 +60,7 @@ for timestamp in timestamps:
         try:
             statusobj = status(logger, ['--dir', taskdir])
             res = statusobj()
-#            res = crabCommand('status', dir = taskdir)
-        except ClientException as cle:
+        except:
             print ' CRAB directory ' + shortname + ' is corrupted. Deleting.'
             cleanup(timestamp, jobdir)
             continue
@@ -71,25 +69,29 @@ for timestamp in timestamps:
 
         if res['status'] == 'SUBMITTED':
             if KILL:
+                print ' Killing jobs..'
                 try:
                     killobj = kill(logger, ['--dir', taskdir])
                     killobj()
-#                    crabCommand('kill', dir = taskdir)
-                except HTTPException as hte:
-                    print ' Failed to kill ' + shortname
-                except ClientException as cle:
+
+                    try:
+                        statusobj = status(logger, ['--dir', taskdir])
+                        res2 = statusobj()
+                        if res2['status'] == 'KILLED':
+                            cleanup(timestamp, jobdir)
+                    except:
+                        print ' Task directory not cleaned up'
+
+                except:
                     print ' Failed to kill ' + shortname
 
-            print ' Resubmitting potential failed jobs..'
-            try:
-                resubmitobj = resubmit(logger, ['--dir', taskdir])
-                resubmitobj()
-            except HTTPException as hte:
-                print ' Failed to resubmit ' + shortname
-            except ClientException as cle:
-                print ' Failed to resubmit ' + shortname
-
-            continue
+            else:
+                print ' Resubmitting potential failed jobs..'
+                try:
+                    resubmitobj = resubmit(logger, ['--dir', taskdir])
+                    resubmitobj()
+                except:
+                    print ' Failed to resubmit ' + shortname
 
         elif res['status'] == 'COMPLETED':
             print ' Clearing.'

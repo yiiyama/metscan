@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <vector>
 #include <map>
+#include <set>
 
 class ASCIIDumper {
 public:
@@ -14,6 +15,9 @@ public:
   ~ASCIIDumper() {}
 
   void addFilter(unsigned idx, char const* name) { filterIndices_.push_back(idx); filterNames_.push_back(name); }
+  void addLumiMask(unsigned long long run, unsigned long long lumi) { lumiMask_.insert((run << 32) | lumi); }
+  void clearLumiMask() { lumiMask_.clear(); }
+
 
   bool dump(char const* inputPath, unsigned recoid, unsigned datasetid);
 
@@ -37,6 +41,7 @@ private:
   ofstream relOut_;
   std::vector<TString> filterNames_{};
   std::vector<unsigned> filterIndices_{};
+  std::set<unsigned long long> lumiMask_{};
   unsigned nTags_{0};
   unsigned nData_{0};
   unsigned nLumis_{0};
@@ -90,8 +95,15 @@ ASCIIDumper::dump(char const* _inputPath, unsigned _recoid, unsigned _datasetid)
   lumis->SetBranchAddress("run", &run);
   lumis->SetBranchAddress("lumi", &lumi);
 
+  auto mEnd(lumiMask_.end());
+
   long iEntry(0);
   while (events->GetEntry(iEntry++) > 0) {
+    unsigned long long test(run);
+    test = (test << 32) | lumi;
+    if (lumiMask_.find(test) != mEnd)
+      continue;
+
     for (unsigned iF(0); iF != nFilters; ++iF) {
       if (!results[iF]) {
 	tagsOut_ << _recoid << "," << run << "," << event << "," << filterIndices_[iF] << std::endl;
@@ -105,10 +117,15 @@ ASCIIDumper::dump(char const* _inputPath, unsigned _recoid, unsigned _datasetid)
   }
 
   iEntry = 0;
-  while (lumis->GetEntry(iEntry++) > 0)
-    analyzedLumis_[run].push_back(lumi);
+  while (lumis->GetEntry(iEntry++) > 0) {
+    unsigned long long test(run);
+    test = (test << 32) | lumi;
+    if (lumiMask_.find(test) != mEnd)
+      continue;
 
-  nLumis_ += iEntry;
+    ++nLumis_;
+    analyzedLumis_[run].push_back(lumi);
+  }
 
   delete source;
   delete [] results;

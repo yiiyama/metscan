@@ -4,6 +4,7 @@ import subprocess
 import ROOT
 
 import config
+from eos import eos, cleanup
 from localdb import dbcursor
 sys.path.append('/afs/cern.ch/cms/caf/python')
 import cmsIO
@@ -12,18 +13,9 @@ import cmsIO
 ### Analyze the ntuples and find tagged events             ###
 ##############################################################
 
-def eos(cmd, *args):
-    proc = subprocess.Popen(['eos', cmd] + list(args), stdout = subprocess.PIPE, stderr = subprocess.PIPE)
-    out, err = proc.communicate()
-    if err.strip():
-        print err.strip()
+sourcedir = config.eosdir
 
-    res = out.strip().split('\n')
-    if len(res) == 1 and res[0] == '':
-        res = []
-
-    return res
-
+NMAX = -1
 
 def download(eosPath):
     global config
@@ -99,41 +91,53 @@ dbcursor.execute('SELECT `filterid`, `name` from `filters`')
 for filterid, name in dbcursor:
     dumper.addFilter(filterid, name)
 
-eosPaths = {}
+sourcePaths = {}
+pathParts = ['merged']
+nFiles = 0
 
-for timestamp in eos('ls', config.eosdir):
-    for pd in eos('ls', config.eosdir + '/' + timestamp):
-        eosPaths[pd] = {}
+for reco in eos('ls', sourcedir + '/' + '/'.join(pathParts)):
+    pathParts.append(reco)
+    sourcePaths[reco] = {}
 
-        for crabRecoVersion in eos('ls', config.eosdir + '/' + timestamp + '/' + pd):
-            reco = crabRecoVersion.replace('crab_' + pd + '_', '')
-            reco = reco[:reco.rfind('-v')]
-            if reco not in eosPaths[pd]:
-                eosPaths[pd][reco] = []
-                
-            for jobTimestamp in eos('ls', config.eosdir + '/' + timestamp + '/' + pd + '/' + crabRecoVersion):
-                for jobBlock in eos('ls', config.eosdir + '/' + timestamp + '/' + pd + '/' + crabRecoVersion + '/' + jobTimestamp):
-                    files = eos('ls', config.eosdir + '/' + timestamp + '/' + pd + '/' + crabRecoVersion + '/' + jobTimestamp + '/' + jobBlock)
-                    eosPaths[pd][reco] += [config.eosdir + '/' + timestamp + '/' + pd + '/' + crabRecoVersion + '/' + jobTimestamp + '/' + jobBlock + '/' + f for f in files if f.endswith('.root')]
-#                    eosPaths[pd][reco] = eosPaths[pd][reco][0:10]
-#                    break
-#                break
-#            break
-#        break
-#    break
+    for pd in eos('ls', sourcedir + '/' + '/'.join(pathParts)):
+        pathParts.append(pd)
+        sourcePaths[reco][pd] = []
 
-for pd in eosPaths.keys():
-    dbcursor.execute('SELECT `datasetid` FROM `primarydatasets` WHERE `name` LIKE %s', (pd,))
-    datasetid = dbcursor.fetchall()[0][0]
+        for fname in eos('ls', sourcedir + '/' + '/'.join(pathParts)):
+            pathParts.append(fname)
+            if fname.endswith('.root'):
+                sourcePaths[reco][pd].append(sourcedir + '/' + '/'.join(pathParts))
+                nFiles += 1
 
-    for reco, paths in eosPaths[pd].items():
-        dbcursor.execute('SELECT `recoid` FROM `reconstructions` WHERE `name` LIKE %s', (reco,))
-        recoid = dbcursor.fetchall()[0][0]
+            pathParts.pop()
+            if NMAX > 0 and nFiles > NMAX:
+                break
 
-        for eosPath in paths:
-            print 'Analyzing', eosPath
+        pathParts.pop()
+        if NMAX > 0 and nFiles > NMAX:
+            break
 
-            localPath = download(eosPath)
+    pathParts.pop()
+    if NMAX > 0 and nFiles > NMAX:
+        break
+
+for reco in sourcePaths.keys():
+    dbcursor.execute('SELECT `recoid` FROM `reconstructions` WHERE `name` LIKE %s', (reco,))
+    recoid = dbcursor.fetchall()[0][0]
+
+    for pd, paths in sourcePaths[reco].items():
+        dbcursor.execute('SELECT `datasetid` FROM `primarydatasets` WHERE `name` LIKE %s', (pd,))
+        datasetid = dbcursor.fetchall()[0][0]
+
+        dumper.clearLumiMask()
+        dbcursor.execute('SELECT `run`, `lumi` FROM `scanstatus` WHERE `recoid` = %s AND `datasetid` = %s AND `status` LIKE \'done\'', (recoid, datasetid))
+        for run, lumi in dbcursor:
+            dumper.addLumiMask(run, lumi)
+
+        for sourcePath in paths:
+            print 'Analyzing', sourcePath
+
+            localPath = download(sourcePath)
 
             status = dumper.dump(localPath, recoid, datasetid)
 
@@ -151,7 +155,7 @@ for pd in eosPaths.keys():
             if dumper.getNLumis() > 1000:
                 updateScanStatus(dumper, recoid, datasetid)
 
-            eos('rm', eosPath)
+            eos('rm', sourcePath)
         
         # update lumi table for each dataset - reco
         if dumper.getNLumis() != 0:
@@ -163,31 +167,4 @@ for pd in eosPaths.keys():
 if dumper.getNTags() != 0:
     updateEventTags(dumper)
 
-for timestamp in eos('ls', config.eosdir):
-    pds = eos('ls', config.eosdir + '/' + timestamp)
-    for pd in list(pds):
-        crabRecoVersions = eos('ls', config.eosdir + '/' + timestamp + '/' + pd)
-        for crabRecoVersion in list(crabRecoVersions):
-            jobTimestamps = eos('ls', config.eosdir + '/' + timestamp + '/' + pd + '/' + crabRecoVersion)
-            for jobTimestamp in list(jobTimestamps):
-                jobBlocks = eos('ls', config.eosdir + '/' + timestamp + '/' + pd + '/' + crabRecoVersion + '/' + jobTimestamp)
-                for jobBlock in list(jobBlocks):
-                    files = eos('ls', config.eosdir + '/' + timestamp + '/' + pd + '/' + crabRecoVersion + '/' + jobTimestamp + '/' + jobBlock)
-                    if len(files) == 0:
-                        eos('rm', '-r', config.eosdir + '/' + timestamp + '/' + pd + '/' + crabRecoVersion + '/' + jobTimestamp + '/' + jobBlock)
-                        jobBlocks.remove(jobBlock)
-
-                if len(jobBlocks) == 0:
-                    eos('rmdir', config.eosdir + '/' + timestamp + '/' + pd + '/' + crabRecoVersion + '/' + jobTimestamp)
-                    jobTimestamps.remove(jobTimestamp)
-
-            if len(jobTimestamps) == 0:
-                eos('rmdir', config.eosdir + '/' + timestamp + '/' + pd + '/' + crabRecoVersion)
-                crabRecoVersions.remove(crabRecoVersion)
-
-        if len(crabRecoVersions) == 0:
-            eos('rmdir', config.eosdir + '/' + timestamp + '/' + pd)
-            pds.remove(pd)
-
-    if len(pds) == 0:
-        eos('rmdir', config.eosdir + '/' + timestamp)
+cleanup(['merged'])

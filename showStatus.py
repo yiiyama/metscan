@@ -1,15 +1,20 @@
 import os
 import sys
 import re
+import time
 import subprocess
 
 import config
 from localdb import dbcursor
 
-htmlDirs = ['/var/www/html', '/afs/cern.ch/user/y/yiiyama/www/metscan']
+#htmlDirs = ['/var/www/html', '/afs/cern.ch/user/y/yiiyama/www/metscan']
+htmlDirs = ['/var/www/html']
 
-messages = '    <p>Golden JSON used is: ' + config.goldenJson + '</p>\n'
-messages += '    <p>Silver JSON used is: ' + config.silverJson + '</p>'
+messages = '    <p><span style="color:red;">The system is currently re-scanning the entire dataset to apply the new muon-in-jets filter.</span></p>\n'
+messages += '    <p><a href="nov2/index.html">Status as of November 2</a></p>\n'
+messages += '    <p>Golden JSON used is: ' + config.goldenJson + '</p>\n'
+messages += '    <p>Silver JSON used is: ' + config.silverJson + '</p>\n'
+messages += '    <p>Page last updated: ' + time.asctime() + '</p>'
 
 dbcursor.execute('SELECT `status`+0 FROM `scanstatus` WHERE `status` LIKE \'done\'')
 DONE = dbcursor.fetchall()[0][0]

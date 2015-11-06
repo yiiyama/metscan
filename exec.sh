@@ -78,6 +78,9 @@ fi
 unalias eos
 source $SCRIPTDIR/eos.sh
 
+export X509_USER_PROXY=/afs/cern.ch/user/y/yiiyama/x509up_u51268
+kinit -R
+
 cd $SCRIPTDIR
 
 if [[ $SCRIPT =~ \.py$ ]]

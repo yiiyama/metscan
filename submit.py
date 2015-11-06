@@ -30,7 +30,6 @@ crabConfig.General.workArea = config.installdir + '/jobs/' + timestamp
 crabConfig.JobType.pluginName = 'Analysis'
 #crabConfig.JobType.outputFiles = ['tags.txt', 'eventdata.txt', 'lumis.txt']
 crabConfig.Data.splitting = 'LumiBased'
-crabConfig.Data.unitsPerJob = 100
 #crabConfig.Data.totalUnits = 1 # TESTING
 crabConfig.Data.outLFNDirBase = config.eosdir + '/' + timestamp
 crabConfig.Site.storageSite = 'T2_CH_CERN'
@@ -68,13 +67,11 @@ for reco in config.reconstructions:
                 # {u'das_id': [u'562e00e8e1391816fc88e7e3'], u'qhash': u'82989270bb85ec7e7d676d8f447a1381', u'cache_id': [u'562e00e8e1391816fc88e81b'], u'das': {u'primary_key': u'run.run_number', u'record': 1, u'condition_keys': [u'dataset.name'], u'ts': 1445855464.7480609, u'system': [u'dbs3'], u'instance': u'prod/global', u'api': [u'runs_via_dataset'], u'expire': 1445855764, u'services': [{u'dbs3': [u'dbs3']}]}, u'run': [{u'run_number': 256584}], u'_id': u'562e00e8e1391816fc88e890'}
                 runsInDS.append(row['run'][0]['run_number'])
 
+            lumisDS = [(run, lumi) for run, lumi in lumis if run in runsInDS]
             # make json
             jsonCont = []
             currentLumiRange = None
-            for run, lumi in lumis:
-                if run < min(runsInDS) or run > max(runsInDS):
-                    continue
-
+            for run, lumi in lumisDS:
                 if len(jsonCont) == 0:
                     jsonCont.append((run, []))
 
@@ -112,15 +109,26 @@ for reco in config.reconstructions:
             crabConfig.General.requestName = pd + '_' + recoVersion
             crabConfig.Data.inputDataset = '/' + pd + '/' + recoVersion + '/RECO'
             crabConfig.Data.lumiMask = lumiMaskName
+            
+            if len(lumisDS) > 50:
+                crabConfig.Data.unitsPerJob = 20
+            else:
+                crabConfig.Data.unitsPerJob = 1
 
             # Submit.
             try:
                 print '  Submitting..'
-                crabCommand('submit', config = crabConfig)
+#                crabCommand('submit', config = crabConfig)
             except HTTPException as hte:
                 print "   Submission for input dataset %s/%s failed: %s" % (pd, recoVersion, hte.headers)
+                continue
             except ClientException as cle:
                 print "   Submission for input dataset %s/%s failed: %s" % (pd, recoVersion, cle)
+                continue
+    
+            query = 'UPDATE `scanstatus` SET `status` = \'scanning\' WHERE `recoid` = %d AND `datasetid` = %d AND (`run`, `lumi`) IN ' % (recoid, datasetid)
+            query += '(%s)' % (', '.join(['(%d, %d)' % ent for ent in lumisDS]))
+            print query
+#            dbcursor.execute(query)
 
-        for run, lumi in lumis:
-            dbcursor.execute('UPDATE `scanstatus` SET `status` = \'scanning\' WHERE `recoid` = %s AND `datasetid` = %s AND `run` = %s AND `lumi` = %s', (recoid, datasetid, run, lumi))
+            break

@@ -75,19 +75,16 @@ else
   done
 fi
 
-unalias eos
-source $SCRIPTDIR/eos.sh
-
 export X509_USER_PROXY=/afs/cern.ch/user/y/yiiyama/x509up_u51268
-kinit -R
+REAUTH="k5reauth -p yiiyama -k /home/yiiyama/yiiyama.keytab --"
 
 cd $SCRIPTDIR
 
 if [[ $SCRIPT =~ \.py$ ]]
 then
-  python $SCRIPT $ARGS
+  $REAUTH python $SCRIPT $ARGS
 else
-  bash $SCRIPT $ARGS
+  $REAUTH bash $SCRIPT $ARGS
 fi
 
 rm $WORKDIR/locks/$SCRIPT.lock

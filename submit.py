@@ -31,7 +31,7 @@ crabConfig.JobType.pluginName = 'Analysis'
 #crabConfig.JobType.outputFiles = ['tags.txt', 'eventdata.txt', 'lumis.txt']
 crabConfig.Data.splitting = 'LumiBased'
 #crabConfig.Data.totalUnits = 1 # TESTING
-crabConfig.Data.outLFNDirBase = config.eosdir + '/' + timestamp
+crabConfig.Data.outLFNDirBase = config.eosdir.replace('/eos/cms', '') + '/' + timestamp
 crabConfig.Site.storageSite = 'T2_CH_CERN'
 
 try:
@@ -111,7 +111,7 @@ for reco in config.reconstructions:
             crabConfig.Data.lumiMask = lumiMaskName
             
             if len(lumisDS) > 50:
-                crabConfig.Data.unitsPerJob = 20
+                crabConfig.Data.unitsPerJob = 50
             else:
                 crabConfig.Data.unitsPerJob = 1
 

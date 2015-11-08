@@ -4,34 +4,13 @@ import subprocess
 import ROOT
 
 import config
-from eos import eos, cleanup
 from localdb import dbcursor
-sys.path.append('/afs/cern.ch/cms/caf/python')
-import cmsIO
 
 ### STEP 3 ###################################################
 ### Analyze the ntuples and find tagged events             ###
 ##############################################################
 
-sourcedir = config.eosdir
-
 NMAX = -1
-
-def download(eosPath):
-    global config
-
-    localPath = config.scratchdir + '/' + os.path.basename(eosPath)
-
-    source = cmsIO.cmsFile(eosPath, 'eos')
-    dest = cmsIO.cmsFile(localPath, 'eos')
-
-    command = cmsIO.getCommand(source.protocol, False)
-    command.append(source.pfn)
-    command.append(dest.pfn)
-    cmsIO.executeCommand(command)
-
-    return localPath
-
 
 def updateScanStatus(dumper, recoid, datasetid):
     global dbcursor
@@ -79,7 +58,6 @@ def loadFromFile(fileName, tableName):
     global config
 
     query = 'LOAD DATA LOCAL INFILE \'' + config.scratchdir + '/' + fileName + '\' INTO TABLE `' + tableName + '` FIELDS TERMINATED BY \',\' LINES TERMINATED BY \'\\n\''
-    print query
     proc = subprocess.Popen(['mysql', '-u', config.dbuser, '-p' + config.dbpass, '-D', config.dbname, '-e', query])
     out, err = proc.communicate()
 
@@ -92,34 +70,27 @@ for filterid, name in dbcursor:
     dumper.addFilter(filterid, name)
 
 sourcePaths = {}
-pathParts = ['merged']
 nFiles = 0
 
-for reco in eos('ls', sourcedir + '/' + '/'.join(pathParts)):
-    pathParts.append(reco)
-    sourcePaths[reco] = {}
+class MaxFiles(Exception):
+    pass
 
-    for pd in eos('ls', sourcedir + '/' + '/'.join(pathParts)):
-        pathParts.append(pd)
-        sourcePaths[reco][pd] = []
-
-        for fname in eos('ls', sourcedir + '/' + '/'.join(pathParts)):
-            pathParts.append(fname)
-            if fname.endswith('.root'):
-                sourcePaths[reco][pd].append(sourcedir + '/' + '/'.join(pathParts))
+try:
+    for reco in os.listdir('/'.join((config.scratchdir, 'merged'))):
+        sourcePaths[reco] = {}
+    
+        for pd in os.listdir('/'.join((config.scratchdir, 'merged', reco))):
+            sourcePaths[reco][pd] = []
+    
+            for fname in os.listdir('/'.join((config.scratchdir, 'merged', reco, pd))):
+                sourcePaths[reco][pd].append('/'.join((config.scratchdir, 'merged', reco, pd, fname)))
                 nFiles += 1
+    
+                if NMAX > 0 and nFiles > NMAX:
+                    raise MaxFiles
 
-            pathParts.pop()
-            if NMAX > 0 and nFiles > NMAX:
-                break
-
-        pathParts.pop()
-        if NMAX > 0 and nFiles > NMAX:
-            break
-
-    pathParts.pop()
-    if NMAX > 0 and nFiles > NMAX:
-        break
+except MaxFiles:
+    pass
 
 for reco in sourcePaths.keys():
     dbcursor.execute('SELECT `recoid` FROM `reconstructions` WHERE `name` LIKE %s', (reco,))
@@ -137,11 +108,7 @@ for reco in sourcePaths.keys():
         for sourcePath in paths:
             print 'Analyzing', sourcePath
 
-            localPath = download(sourcePath)
-
-            status = dumper.dump(localPath, recoid, datasetid)
-
-            os.remove(localPath)
+            status = dumper.dump(sourcePath, recoid, datasetid)
 
             if not status:
                 continue
@@ -155,7 +122,7 @@ for reco in sourcePaths.keys():
             if dumper.getNLumis() > 1000:
                 updateScanStatus(dumper, recoid, datasetid)
 
-            eos('rm', sourcePath)
+            os.remove(sourcePath)
         
         # update lumi table for each dataset - reco
         if dumper.getNLumis() != 0:
@@ -167,4 +134,4 @@ for reco in sourcePaths.keys():
 if dumper.getNTags() != 0:
     updateEventTags(dumper)
 
-cleanup(['merged'])
+print 'Done.'

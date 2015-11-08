@@ -64,6 +64,7 @@ ASCIIDumper::dump(char const* _inputPath, unsigned _recoid, unsigned _datasetid)
     return false;
 
   unsigned nFilters(filterNames_.size());
+  std::cout << "nFilters = " << nFilters << std::endl;
 
   auto* events(static_cast<TTree*>(source->Get("ntuples/metfilters")));
   auto* lumis(static_cast<TTree*>(source->Get("ntuples/lumis")));
@@ -88,6 +89,7 @@ ASCIIDumper::dump(char const* _inputPath, unsigned _recoid, unsigned _datasetid)
       if (fItr == filterNames_.end())
 	continue;
 
+      std::cout << "SetBranchAddress(" << bName << ")" << std::endl;
       events->SetBranchAddress(bName, results + (fItr - filterNames_.begin()));
     }
   }

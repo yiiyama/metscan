@@ -3,65 +3,57 @@ import os
 import time
 import subprocess
 import config
-from eos import eos, cleanup
+from localdb import dbcursor
+import xrd
 
 sourcedir = config.eosdir
-targetdir = config.eosdir
 
-def mergeAndMove(pathParts):
-    lines = eos('ls', '-l', sourcedir + '/' + '/'.join(pathParts))
+def mergeAndMove(remotePath):
+    lines = xrd.ls(remotePath, lopt = True)
     filesToMerge = []
     for line in lines:
         words = line.split()
-        newParts = pathParts + [words[-1]]
-        path = '/' + '/'.join(newParts)
-        print 'Merging files in', path
+        newPath = words[-1]
+        print 'Merging files in', newPath
         if words[0][0] == 'd':
-            if words[-1] == 'failed':
-                eos('rm', '-r', sourcedir + path)
+            if newPath.endswith('failed'):
+                xrd.cleanup(newPath, force = True)
             else:
-                mergeAndMove(newParts)
+                mergeAndMove(newPath)
 
-        elif words[-1].endswith('.root'):
-            filesToMerge.append('root://eoscms.cern.ch//eos/cms' + sourcedir + path)
+        elif newPath.endswith('.root'):
+            filesToMerge.append(newPath)
 
     if len(filesToMerge):
+        pathParts = remotePath.replace(sourcedir, '')[1:].split('/') # <timestamp> <pd> crab_<pd>_<reco>-v* ...
+        pd = pathParts[1]
+        recov = pathParts[2]
+        reco = recov.replace('crab_' + pd + '_', '')
+        reco = reco[:reco.rfind('-v')]
+
         fileName = 'metfilters_%s.root' % time.strftime('%y%m%d%H%M%S')
-        tmpFile = '/data/scratch/' + fileName
-        proc = subprocess.Popen(['hadd', tmpFile] + filesToMerge)
+        outFile = '/'.join(config.scratchdir, 'merged', reco, pd, fileName)
+
+        proc = subprocess.Popen(['hadd', outFile] + ['root://eoscms.cern.ch/' + f for f in filesToMerge])
         proc.wait()
 
         if proc.returncode == 0:
-            pd = pathParts[1]
-            recov = pathParts[2]
-            reco = recov.replace('crab_' + pd + '_', '')
-            reco = reco[:reco.rfind('-v')]
-            proc = subprocess.Popen(['xrdcp', tmpFile, 'root://eoscms.cern.ch//eos/cms' + targetdir + '/merged/' + reco + '/' + pd + '/' + fileName])
-            proc.wait()
-
-            if proc.returncode == 0:
-                for path in filesToMerge:
-                    eos('rm', path.replace('root://eoscms.cern.ch//eos/cms', ''))
-
-        os.remove(tmpFile)
+            for path in filesToMerge:
+                xrd.rm(path)
 
 
 if __name__ == '__main__':
-    recos = eos('ls', targetdir + '/merged')
-    for timestamp in eos('ls', sourcedir):
-        if timestamp == 'merged':
-            continue
+    dbcursor.execute('SELECT `name` FROM `primarydatasets`')
+    for reco in config.reconstructions:
+        for name in dbcursor:
+            if not os.path.isdir('/'.join(config.scratchdir, 'merged', reco, name)):
+                os.mkdir('/'.join(config.scratchdir, 'merged', reco, name))
 
-        for pd in eos('ls', sourcedir + '/' + timestamp):
-            for recov in eos('ls', sourcedir + '/' + timestamp + '/' + pd):
-                reco = recov.replace('crab_' + pd + '_', '')
-                reco = reco[:reco.rfind('-v')]
-                if reco not in recos:
-                    eos('mkdir', targetdir + '/merged/' + reco)
-                    
-                if pd not in eos('ls', targetdir + '/merged/' + reco):
-                    eos('mkdir', targetdir + '/merged/' + reco + '/' + pd)
+    for tsdir in xrd.ls(sourcedir):
+        for pddir in xrd.ls(tsdir):
+            for recovdir in xrd.ls(pddir):
+                mergeAndMove(recovdir)
 
-                mergeAndMove([timestamp, pd, recov])
+    xrd.cleanup(sourcedir)
 
-        cleanup([timestamp])
+    print 'Done.'

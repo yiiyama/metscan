@@ -8,7 +8,7 @@ scratchdir = '/data/scratch'
 
 reconstructions = ['Run2015D-PromptReco']
 
-datasetExcludePatterns = ['HLT.*', '.*_0T', 'Commissioning', 'Cosmics', 'TOTEM.*', 'ToTOTEM.*', 'L1MinimumBias.*', 'EGMLowPU', 'EmptyBX', 'FSQJets.', 'FullTrack', 'HighMultiplicity', 'HIN.*', 'ZeroBias[5-8]']
+datasetExcludePatterns = ['HLT.*', '.*_0T', 'Commissioning', 'Cosmics', 'TOTEM.*', 'ToTOTEM.*', 'L1MinimumBias.*', 'EGMLowPU', 'EmptyBX', 'FSQJets.', 'FullTrack', 'HighMultiplicity.*', 'HIN.*', 'ZeroBias.*']
 
 cmsswbases = {
     'Run2015D-PromptReco': ('CMSSW_7_4_12', 'CMSSW_7_4_12_scanningHalo')
@@ -23,4 +23,4 @@ dcsJsons = [
 goldenJson = '/afs/cern.ch/cms/CAF/CMSCOMM/COMM_DQM/certification/Collisions15/13TeV/Cert_246908-258750_13TeV_PromptReco_Collisions15_25ns_JSON.txt'
 silverJson = '/afs/cern.ch/cms/CAF/CMSCOMM/COMM_DQM/certification/Collisions15/13TeV/Cert_246908-258750_13TeV_PromptReco_Collisions15_25ns_JSON_Silver.txt'
 
-eosdir = '/store/user/yiiyama/metscan'
+eosdir = '/eos/cms/store/user/yiiyama/metscan'

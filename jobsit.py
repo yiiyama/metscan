@@ -44,7 +44,6 @@ def cleanup(timestamp, jobdir):
             allLumis += ['(%s, %d)' % (srun, l) for l in range(start, end + 1)]
 
     query = 'UPDATE `scanstatus` SET `status` = \'failed\' WHERE `status` LIKE \'scanning\' AND (`run`, `lumi`) IN (%s)' % (', '.join(allLumis))
-    print query
 
     dbcursor.execute(query)
     shutil.rmtree(config.installdir + '/jobs/' + timestamp + '/' + jobdir)

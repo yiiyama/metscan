@@ -73,7 +73,7 @@ for reco in config.reconstructions:
             for first, last in lumiranges:
                 for lumi in range(first, last + 1):
                     if lumi in dcsMask[run]:
-                        infile.write('%d,%d,%d,%d\n' % (recoid, datasetid, run, lumi))
+                        infile.write('%d,%d,%d,%d,\'new\'\n' % (recoid, datasetid, run, lumi))
 
 infile.close()
 

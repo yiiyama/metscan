@@ -2,6 +2,7 @@ import os
 import sys
 import re
 import time
+import math
 import subprocess
 
 import config
@@ -10,8 +11,8 @@ from localdb import dbcursor
 #htmlDirs = ['/var/www/html', '/afs/cern.ch/user/y/yiiyama/www/metscan']
 htmlDirs = ['/var/www/html']
 
-messages = '    <p><span style="color:red;">The system is currently re-scanning the entire dataset to apply the new muon-in-jets filter.</span></p>\n'
-messages += '    <p><a href="nov2/index.html">Status as of November 2</a></p>\n'
+messages = '    <p><span style="color:red;">The system is currently re-scanning the entire dataset.</span></p>\n'
+messages += '    <p><a href="nov18/index.html">Status as of November 18</a></p>\n'
 messages += '    <p>Golden JSON used is: ' + config.goldenJson + '</p>\n'
 messages += '    <p>Silver JSON used is: ' + config.silverJson + '</p>\n'
 messages += '    <p>Page last updated: ' + time.asctime() + '</p>'
@@ -23,13 +24,7 @@ dbcursor.execute('SELECT `recoid`, `name` FROM `reconstructions` ORDER BY `recoi
 recos = [(row[0], row[1]) for row in dbcursor]
 
 dbcursor.execute('SELECT `datasetid`, `name` FROM `primarydatasets` ORDER BY `name`')
-pds = []
-for pdid, pdname in dbcursor:
-    for pat in config.datasetExcludePatterns:
-        if re.match(pat + '$', pdname):
-            break
-    else:
-        pds.append((pdid, pdname))
+pds = [(pdid, pdname) for pdid, pdname in dbcursor]
 
 status = dict([(reco[0], dict([(pdid, {}) for pdid, name in pds])) for reco in recos])
 dbcursor.execute('SELECT `recoid`, `datasetid`, `run`, `lumi`, `status`+0 FROM `scanstatus`')
@@ -105,22 +100,34 @@ for recoid, reconame in recos:
 
         for run in sorted(status[recoid][pdid].keys()):
             lumis = status[recoid][pdid][run]
+
             ndone = sum([1 for l, s in lumis if s == DONE])
+            total = len(lumis)
+
             if run in golden:
                 ngolden = sum([1 for l, s in lumis if s == DONE and l in golden[run]])
-                dgolden = len(golden[run])
+                dgolden = sum([1 for l in golden[run] if l in [x for x, s in lumis]])
             else:
                 ngolden = 0
                 dgolden = 0
+
             if run in silver:
                 nsilver = sum([1 for l, s in lumis if s == DONE and l in silver[run]])
-                dsilver = len(silver[run])
+                dsilver = sum([1 for l in silver[run] if l in [x for x, s in lumis]])
             else:
                 nsilver = 0
                 dsilver = 0
 
-            total = len(lumis)
-            dsHTML += '      <tr><td>%d</td><td>%d/%d</td><td>%d/%d</td><td>%d/%d</td></tr>\n' % (run, ngolden, dgolden, nsilver, dsilver, ndone, total)
+            dsHTML += '      <tr><td>%d</td>' % run
+            for n, d in [(ngolden, dgolden), (nsilver, dsilver), (ndone, total)]:
+                dsHTML += '<td>'
+                if n != d:
+                    dsHTML += '<span style="color:red;">%d</span>' % n
+                else:
+                    dsHTML += str(n)
+                dsHTML += '/%d</td>' % d
+            dsHTML += '</tr>\n'
+
             ndonePD += ndone
             ngoldenPD += ngolden
             nsilverPD += nsilver
@@ -137,15 +144,15 @@ for recoid, reconame in recos:
                 htmlFile.write(dsHTML)
 
         if dgoldenPD:
-            mainHTML += '<td>%.1f</td>' % (float(ngoldenPD) / dgoldenPD * 100.)
+            mainHTML += '<td>%.1f</td>' % (math.floor(float(ngoldenPD) / dgoldenPD * 1000.) / 10.)
         else:
             mainHTML += '<td>N/A</td>'
         if dsilverPD:
-            mainHTML += '<td>%.1f</td>' % (float(nsilverPD) / dsilverPD * 100.)
+            mainHTML += '<td>%.1f</td>' % (math.floor(float(nsilverPD) / dsilverPD * 1000.) / 10.)
         else:
             mainHTML += '<td>N/A</td>'
         if totalPD:
-            mainHTML += '<td>%.1f</td>' % (float(ndonePD) / totalPD * 100.)
+            mainHTML += '<td>%.1f</td>' % (math.floor(float(ndonePD) / totalPD * 1000.) / 10.)
         else:
             mainHTML += '<td>N/A</td>'
 

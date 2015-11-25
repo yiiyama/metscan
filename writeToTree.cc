@@ -9,55 +9,43 @@
 #include <map>
 #include <set>
 
-class ASCIIDumper {
+class TreeWriter {
 public:
-  ASCIIDumper(char const* outputDir);
-  ~ASCIIDumper() {}
+  TreeWriter(char const* outputDir);
+  ~TreeWriter() {}
 
   void addFilter(unsigned idx, char const* name) { filterIndices_.push_back(idx); filterNames_.push_back(name); }
   void addLumiMask(unsigned long long run, unsigned long long lumi) { lumiMask_.insert((run << 32) | lumi); }
   void clearLumiMask() { lumiMask_.clear(); }
 
+  bool dump(char const* inputPath, unsigned datasetid);
 
-  bool dump(char const* inputPath, unsigned recoid, unsigned datasetid);
-
-  unsigned getNTags() const { return nTags_; }
-  unsigned getNData() const { return nData_; }
-  unsigned getNLumis() const { return nLumis_; }
   std::vector<unsigned> getAnalyzedRuns() const;
   std::vector<unsigned> getAnalyzedLumis(unsigned run) { return analyzedLumis_[run]; }
 
-  void closeTags() { tagsOut_.close(); }
-  void closeData() { dataOut_.close(); relOut_.close(); }
-
-  void resetNTags() { nTags_ = 0; tagsOut_.open((outputDir_ + "/eventtags.txt").Data()); }
-  void resetNData() { nData_ = 0; dataOut_.open((outputDir_ + "/eventdata.txt").Data()); relOut_.open((outputDir_ + "/datasetrel.txt").Data()); }
   void resetRuns() { analyzedLumis_.clear(); nLumis_ = 0; }
 
 private:
+  bool openOutput_(unsigned run);
+  bool closeOutput_();
+
   TString const outputDir_;
-  ofstream tagsOut_;
-  ofstream dataOut_;
-  ofstream relOut_;
   std::vector<TString> filterNames_{};
   std::vector<unsigned> filterIndices_{};
   std::set<unsigned long long> lumiMask_{};
-  unsigned nTags_{0};
-  unsigned nData_{0};
-  unsigned nLumis_{0};
+
+  TTree* currentOutput_{0};
+
   std::map<unsigned, std::vector<unsigned>> analyzedLumis_{};
 };
 
-ASCIIDumper::ASCIIDumper(char const* _outputDir) :
-  outputDir_(_outputDir),
-  tagsOut_((outputDir_ + "/eventtags.txt").Data()),
-  dataOut_((outputDir_ + "/eventdata.txt").Data()),
-  relOut_((outputDir_ + "/datasetrel.txt").Data())
+TreeWriter::TreeWriter(char const* _outputDir) :
+  outputDir_(_outputDir)
 {
 }  
 
 bool
-ASCIIDumper::dump(char const* _inputPath, unsigned _recoid, unsigned _datasetid)
+TreeWriter::dump(char const* _inputPath, unsigned _datasetid)
 {
   auto* source(TFile::Open(_inputPath));
   if (!source || source->IsZombie())
@@ -96,24 +84,71 @@ ASCIIDumper::dump(char const* _inputPath, unsigned _recoid, unsigned _datasetid)
   lumis->SetBranchAddress("lumi", &lumi);
 
   auto mEnd(lumiMask_.end());
+  bool testLumi(lumiMask_.size() != 0);
+
+  unsigned currentRun_(0);
 
   long iEntry(0);
   while (events->GetEntry(iEntry++) > 0) {
-    unsigned long long test(run);
-    test = (test << 32) | lumi;
-    if (lumiMask_.find(test) != mEnd)
-      continue;
+    if (testLumi) {
+     unsigned long long test(run);
+     test = (test << 32) | lumi;
+     if (lumiMask_.find(test) != mEnd)
+       continue;
+    }
 
-    for (unsigned iF(0); iF != nFilters; ++iF) {
-      if (!results[iF]) {
-	tagsOut_ << _recoid << "," << run << "," << event << "," << filterIndices_[iF] << std::endl;
-	++nTags_;
+    if (run_ != currentRun_) {
+      if (currentOutput_) {
+	auto* outputFile(currentFile_->GetCurrentFile());
+	outputFile->cd();
+	currentFile_->Write();
+	delete outputFile;
+      }
+      auto* outputFile(TFile::Open(outputDir_ + "/" + TString::Format("%d.root", run), "update"));
+      if (!outputFile || outputFile->IsZombie())
+	return false;
+
+      currentOutput_ = static_cast<TTree*>(outputFile->Get("events"));
+      if (currentOutput_) {
+	currentOutput_->SetBranchAddress("datasetid", &_datasetid);
+	currentOutput_->SetBranchAddress("run", &run);
+	currentOutput_->SetBranchAddress("lumi", &lumi);
+	currentOutput_->SetBranchAddress("event", &event);
+	currentOutput_->SetBranchAddress("pfMET", &pfMET);
+	for (auto* br : *branches) {
+	  TString bName(br->GetName());
+	  if (bName.Index("filter_") == 0) {
+	    TString fName(bName(7, bName.Length()));
+	    auto fItr(std::find(filterNames_.begin(), filterNames_.end(), fName));
+	    if (fItr == filterNames_.end())
+	      continue;
+
+	    currentOutput_->SetBranchAddress(bName, results + (fItr - filterNames_.begin()));
+	  }
+	}
+      }
+      else {
+	currentOutput_ = new TTree("events", "MET filtered events");
+	currentOutput_->Branch("datasetid", &_datasetid, "datasetid/i");
+	currentOutput_->Branch("run", &run, "run/i");
+	currentOutput_->Branch("lumi", &lumi, "lumi/i");
+	currentOutput_->Branch("event", &event, "event/i");
+	currentOutput_->Branch("pfMET", &pfMET, "pfMET/F");
+	for (auto* br : *branches) {
+	  TString bName(br->GetName());
+	  if (bName.Index("filter_") == 0) {
+	    TString fName(bName(7, bName.Length()));
+	    auto fItr(std::find(filterNames_.begin(), filterNames_.end(), fName));
+	    if (fItr == filterNames_.end())
+	      continue;
+
+	    currentOutput_->Branch(bName, results + (fItr - filterNames_.begin()), bName + "/O");
+	  }
+	}
       }
     }
 
-    dataOut_ << _recoid << "," << run << "," << event << "," << lumi << "," << pfMET << std::endl;
-    relOut_ << _datasetid << "," << run << "," << event << std::endl;
-    ++nData_;
+    currentOutput_->Fill();
   }
 
   iEntry = 0;
@@ -123,18 +158,18 @@ ASCIIDumper::dump(char const* _inputPath, unsigned _recoid, unsigned _datasetid)
     if (lumiMask_.find(test) != mEnd)
       continue;
 
-    ++nLumis_;
     analyzedLumis_[run].push_back(lumi);
   }
 
   delete source;
   delete [] results;
+  delete branches;
 
   return true;
 }
 
 std::vector<unsigned>
-ASCIIDumper::getAnalyzedRuns() const
+TreeWriter::getAnalyzedRuns() const
 {
   std::vector<unsigned> runs;
   for (auto& r : analyzedLumis_)

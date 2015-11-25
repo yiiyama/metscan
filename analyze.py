@@ -83,8 +83,9 @@ try:
             sourcePaths[reco][pd] = []
     
             for fname in os.listdir('/'.join((config.scratchdir, 'merged', reco, pd))):
-                sourcePaths[reco][pd].append('/'.join((config.scratchdir, 'merged', reco, pd, fname)))
-                nFiles += 1
+                if fname.endswith('.root'):
+                    sourcePaths[reco][pd].append('/'.join((config.scratchdir, 'merged', reco, pd, fname)))
+                    nFiles += 1
     
                 if NMAX > 0 and nFiles > NMAX:
                     raise MaxFiles
@@ -94,16 +95,17 @@ except MaxFiles:
 
 for reco in sourcePaths.keys():
     dbcursor.execute('SELECT `recoid` FROM `reconstructions` WHERE `name` LIKE %s', (reco,))
-    recoid = dbcursor.fetchall()[0][0]
+    try:
+        recoid = dbcursor.fetchall()[0][0]
+    except IndexError:
+        continue
 
     for pd, paths in sourcePaths[reco].items():
         dbcursor.execute('SELECT `datasetid` FROM `primarydatasets` WHERE `name` LIKE %s', (pd,))
-        datasetid = dbcursor.fetchall()[0][0]
-
-        dumper.clearLumiMask()
-        dbcursor.execute('SELECT `run`, `lumi` FROM `scanstatus` WHERE `recoid` = %s AND `datasetid` = %s AND `status` LIKE \'done\'', (recoid, datasetid))
-        for run, lumi in dbcursor:
-            dumper.addLumiMask(run, lumi)
+        try:
+            datasetid = dbcursor.fetchall()[0][0]
+        except IndexError:
+            continue
 
         for sourcePath in paths:
             print 'Analyzing', sourcePath

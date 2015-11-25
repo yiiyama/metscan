@@ -32,24 +32,33 @@ def mergeAndMove(remotePath):
         reco = reco[:reco.rfind('-v')]
 
         fileName = 'metfilters_%s.root' % time.strftime('%y%m%d%H%M%S')
-        outFile = '/'.join(config.scratchdir, 'merged', reco, pd, fileName)
+        outFile = '/'.join((config.scratchdir, 'merged', reco, pd, fileName))
 
-        proc = subprocess.Popen(['hadd', outFile] + ['root://eoscms.cern.ch/' + f for f in filesToMerge])
+        proc = subprocess.Popen(['hadd', outFile + '.tmp'] + ['root://eoscms.cern.ch/' + f for f in filesToMerge])
         proc.wait()
 
         if proc.returncode == 0:
+            os.rename(outFile + '.tmp', outFile)
+
             for path in filesToMerge:
                 xrd.rm(path)
+
+        else:
+            os.remove(outFile + '.tmp')
 
 
 if __name__ == '__main__':
     dbcursor.execute('SELECT `name` FROM `primarydatasets`')
     for reco in config.reconstructions:
-        for name in dbcursor:
-            if not os.path.isdir('/'.join(config.scratchdir, 'merged', reco, name)):
-                os.mkdir('/'.join(config.scratchdir, 'merged', reco, name))
+        for name in [row[0] for row in dbcursor]:
+            if not os.path.isdir('/'.join((config.scratchdir, 'merged', reco, name))):
+                os.mkdir('/'.join((config.scratchdir, 'merged', reco, name)))
 
     for tsdir in xrd.ls(sourcedir):
+        #temporary
+        if int(os.path.basename(tsdir)) < 151108000000:
+            continue
+
         for pddir in xrd.ls(tsdir):
             for recovdir in xrd.ls(pddir):
                 mergeAndMove(recovdir)

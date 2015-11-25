@@ -8,7 +8,26 @@ scratchdir = '/data/scratch'
 
 reconstructions = ['Run2015D-PromptReco']
 
-datasetExcludePatterns = ['HLT.*', '.*_0T', 'Commissioning', 'Cosmics', 'TOTEM.*', 'ToTOTEM.*', 'L1MinimumBias.*', 'EGMLowPU', 'EmptyBX', 'FSQJets.', 'FullTrack', 'HighMultiplicity.*', 'HIN.*', 'ZeroBias.*']
+datasets = [
+    'BTagCSV',
+    'BTagMu',
+    'Charmonium',
+    'DisplacedJet',
+    'DoubleEG',
+    'DoubleMuon',
+    'DoubleMuonLowMass',
+    'HTMHT',
+    'JetHT',
+    'MET',
+    'MinimumBias',
+    'MuOnia',
+    'MuonEG',
+    'NoBPTX',
+    'SingleElectron',
+    'SingleMuon',
+    'SinglePhoton',
+    'Tau'
+]
 
 cmsswbases = {
     'Run2015D-PromptReco': ('CMSSW_7_4_12', 'CMSSW_7_4_12_scanningHalo')
@@ -20,7 +39,7 @@ dcsJsons = [
     '/afs/cern.ch/cms/CAF/CMSCOMM/COMM_DQM/certification/Collisions15/13TeV/DCSOnly/json_DCSONLY_2.8T.txt'
 ]
 
-goldenJson = '/afs/cern.ch/cms/CAF/CMSCOMM/COMM_DQM/certification/Collisions15/13TeV/Cert_246908-258750_13TeV_PromptReco_Collisions15_25ns_JSON.txt'
-silverJson = '/afs/cern.ch/cms/CAF/CMSCOMM/COMM_DQM/certification/Collisions15/13TeV/Cert_246908-258750_13TeV_PromptReco_Collisions15_25ns_JSON_Silver.txt'
+goldenJson = '/afs/cern.ch/cms/CAF/CMSCOMM/COMM_DQM/certification/Collisions15/13TeV/Cert_246908-260627_13TeV_PromptReco_Collisions15_25ns_JSON.txt'
+silverJson = '/afs/cern.ch/cms/CAF/CMSCOMM/COMM_DQM/certification/Collisions15/13TeV/Cert_246908-260627_13TeV_PromptReco_Collisions15_25ns_JSON_Silver.txt'
 
 eosdir = '/eos/cms/store/user/yiiyama/metscan'

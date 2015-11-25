@@ -26,10 +26,7 @@ def datasetList():
         for row in dasQuery('dataset dataset=/*/' + reco + '-*/RECO'):
             dsdata = row['dataset'][0]
             pd = dsdata['primary_dataset']['name']
-            for excl in config.datasetExcludePatterns:
-                if re.match(excl + '$', pd):
-                    break
-            else:
+            if pd in config.datasets:
                 datasets.append((pd, dsdata['processed_ds_name']))
     
     return datasets

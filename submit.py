@@ -2,6 +2,7 @@ import os
 import sys
 import re
 import time
+import shutil
 
 from CRABAPI.RawCommand import crabCommand
 from CRABClient.ClientExceptions import ClientException
@@ -110,25 +111,26 @@ for reco in config.reconstructions:
             crabConfig.Data.inputDataset = '/' + pd + '/' + recoVersion + '/RECO'
             crabConfig.Data.lumiMask = lumiMaskName
             
-            if len(lumisDS) > 50:
-                crabConfig.Data.unitsPerJob = 50
+            if len(lumisDS) > 30:
+                crabConfig.Data.unitsPerJob = 30
             else:
                 crabConfig.Data.unitsPerJob = 1
 
             # Submit.
-            try:
+            nAttempt = 0
+            while nAttempt < 10:
                 print '  Submitting..'
-#                crabCommand('submit', config = crabConfig)
-            except HTTPException as hte:
-                print "   Submission for input dataset %s/%s failed: %s" % (pd, recoVersion, hte.headers)
-                continue
-            except ClientException as cle:
-                print "   Submission for input dataset %s/%s failed: %s" % (pd, recoVersion, cle)
-                continue
+                try:
+                    crabCommand('submit', config = crabConfig)
+                    break
+                except HTTPException as hte:
+                    print "   Submission for input dataset %s/%s failed: %s" % (pd, recoVersion, hte.headers)
+                except ClientException as cle:
+                    print "   Submission for input dataset %s/%s failed: %s" % (pd, recoVersion, cle)
+
+                shutil.rmtree(crabConfig.General.workArea + '/crab_' + crabConfig.General.requestName)
+                nAttempt += 1
     
             query = 'UPDATE `scanstatus` SET `status` = \'scanning\' WHERE `recoid` = %d AND `datasetid` = %d AND (`run`, `lumi`) IN ' % (recoid, datasetid)
             query += '(%s)' % (', '.join(['(%d, %d)' % ent for ent in lumisDS]))
-            print query
-#            dbcursor.execute(query)
-
-            break
+            dbcursor.execute(query)

@@ -66,21 +66,12 @@ for timestamp in timestamps:
 
         print ' Task ' + shortname + ' status is ' + res['status']
 
-        if res['status'] == 'SUBMITTED':
+        if res['status'] == 'SUBMITTED' or res['status'] == 'QUEUED':
             if KILL:
                 print ' Killing jobs..'
                 try:
                     killobj = kill(logger, ['--dir', taskdir])
                     killobj()
-
-                    try:
-                        statusobj = status(logger, ['--dir', taskdir])
-                        res2 = statusobj()
-                        if res2['status'] == 'KILLED':
-                            cleanup(timestamp, jobdir)
-                    except:
-                        print ' Task directory not cleaned up'
-
                 except:
                     print ' Failed to kill ' + shortname
 
@@ -106,6 +97,20 @@ for timestamp in timestamps:
 
             cleanup(timestamp, jobdir)
 
+if KILL:
+    for timestamp in timestamps:
+        jobdirs = [d for d in os.listdir(config.installdir + '/jobs/' + timestamp) if d.startswith('crab_')]
+        for jobdir in jobdirs:
+            taskdir = config.installdir + '/jobs/' + timestamp + '/' + jobdir
+            try:
+                statusobj = status(logger, ['--dir', taskdir])
+                res = statusobj()
+                if res['status'] == 'KILLED':
+                    cleanup(timestamp, jobdir)
+            except:
+                print ' Task directory not cleaned up.'
+
+for timestamp in timestamps:
     jobdirs = [d for d in os.listdir(config.installdir + '/jobs/' + timestamp) if d.startswith('crab_')]
     if len(jobdirs) == 0:
         shutil.rmtree(config.installdir + '/jobs/' + timestamp)
